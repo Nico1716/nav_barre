@@ -1,6 +1,7 @@
 import pygame
 import math
 import os
+import random
 from utils import *
 
 # Initialisation de Pygame
@@ -10,7 +11,7 @@ pygame.key.set_repeat(0)
 # Dimensions de la fenêtre
 WIDTH, HEIGHT = 800, 600
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
-pygame.display.set_caption("Voiliers")
+pygame.display.set_caption("Voiliers avec vent oscillant")
 
 # Couleurs
 RED = (255, 120, 0)
@@ -88,14 +89,16 @@ bouee = (WIDTH // 2, 100)
 
 # Variables pour le vent
 vent_angle = 90  # Angle initial du vent
+vent_speed = 0.005  # Vitesse de l'oscillation du vent
+temps = 0  # Compteur de temps pour l'oscillation
 
-# Slider
-slider_rect = pygame.Rect(150, 550, 500, 10)
-slider_pos = 400
-slider_dragging = False
+# Activer les micro-variations pour ce scénario
+activer_micro_variations(True)
+
+clock = pygame.time.Clock()
 
 def main():
-    global vent_angle, slider_pos, slider_dragging
+    global vent_angle, temps
     running = True
     while running:
         screen.fill(BLUE)
@@ -113,24 +116,14 @@ def main():
                         bateau.virement_manuel()
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Clic gauche
-                    # Vérifier si on clique sur le slider
-                    mouse_pos = pygame.mouse.get_pos()
-                    if slider_rect.collidepoint(mouse_pos):
-                        slider_dragging = True
                     # Vérifier si on clique sur le bouton menu
-                    if dessiner_bouton_menu(screen).collidepoint(mouse_pos):
+                    if dessiner_bouton_menu(screen).collidepoint(event.pos):
                         retour_au_menu()
-            elif event.type == pygame.MOUSEBUTTONUP:
-                if event.button == 1:  # Relâchement du clic gauche
-                    slider_dragging = False
-            elif event.type == pygame.MOUSEMOTION:
-                if slider_dragging:
-                    # Mettre à jour la position du slider
-                    mouse_x = pygame.mouse.get_pos()[0]
-                    slider_pos = max(slider_rect.left, min(slider_rect.right, mouse_x))
-                    # Calculer l'angle du vent en fonction de la position du curseur
-                    slider_angle = -20 + (slider_pos - slider_rect.left) / slider_rect.width * 40
-                    vent_angle = slider_angle + 90
+
+        # Mise à jour de l'angle du vent avec oscillation
+        temps += vent_speed
+        vent_angle_base = 90 + 10 * math.sin(temps)  # Oscillation entre 70° et 110°
+        vent_angle = calculer_angle_vent(vent_angle_base)
 
         # Calculer les laylines
         laylines = dessiner_laylines(screen, bouee, vent_angle)
@@ -145,10 +138,6 @@ def main():
 
         # Dessiner le vent
         dessiner_vent(screen, vent_angle)
-
-        # Dessiner le slider
-        pygame.draw.rect(screen, GRAY, slider_rect)
-        pygame.draw.circle(screen, WHITE, (slider_pos, slider_rect.centery), 10)
         
         # Afficher l'angle du vent
         angle_text = FONT.render(f"Vent: {int(vent_angle - 90)}°", True, WHITE)
@@ -163,4 +152,4 @@ def main():
 if __name__ == "__main__":
     main()
 
-pygame.quit()
+pygame.quit() 
