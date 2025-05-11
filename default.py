@@ -3,10 +3,6 @@ import math
 import os
 from utils import *
 
-# Initialisation de Pygame
-pygame.init()
-pygame.key.set_repeat(0)
-
 # Dimensions de la fenêtre
 WIDTH, HEIGHT = 800, 600
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -125,39 +121,8 @@ class SliderScenario(Scenario):
                         bateau.virement_manuel()
 
     def draw(self):
-        screen.fill(BLUE)
-        
-        # Dessiner les laylines
-        if self.show_laylines:
-            dessiner_laylines(screen, self.bouee, self.vent_angle, draw=True)
-        else:
-            dessiner_laylines(screen, self.bouee, self.vent_angle, draw=False)
-        
-        # Dessiner les bateaux
-        for bateau in self.bateaux:
-            bateau.dessiner(screen)
-        
-        # Dessiner la bouée
-        pygame.draw.circle(screen, YELLOW, self.bouee, 10)
-        
-        # Dessiner le vent
-        dessiner_vent(screen, self.vent_angle)
-        
-        # Afficher l'angle du vent
-        angle_text = FONT.render(f"Vent: {int(self.vent_angle - 90)}°", True, WHITE)
-        screen.blit(angle_text, (10, HEIGHT - 80))
-        
-        # Dessiner le bouton menu
-        dessiner_bouton_menu(screen)
-
-        # Dessiner le bouton des laylines
-        pygame.draw.rect(screen, DARK_GRAY, self.laylines_button)
-        pygame.draw.rect(screen, WHITE, self.laylines_button, 2)
-        laylines_text = SMALL_FONT.render(
-            "Debug laylines: " + ("ON" if self.show_laylines else "OFF"),
-            True, WHITE
-        )
-        screen.blit(laylines_text, (self.laylines_button.x + 10, self.laylines_button.y + 5))
+        # Appeler la méthode draw de la classe parente
+        super().draw()
 
         # Dessiner le slider
         pygame.draw.rect(screen, GRAY, self.slider_rect)
@@ -180,4 +145,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-    pygame.quit()

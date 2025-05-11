@@ -4,10 +4,6 @@ import os
 import random
 from utils import *
 
-# Initialisation de Pygame
-pygame.init()
-pygame.key.set_repeat(0)
-
 # Dimensions de la fenêtre
 WIDTH, HEIGHT = 800, 600
 screen = pygame.display.set_mode((WIDTH, HEIGHT))
@@ -89,7 +85,7 @@ bouee = (WIDTH // 2, 100)
 
 # Variables pour le vent
 vent_angle = 90  # Angle initial du vent
-vent_speed = 0.005  # Vitesse de l'oscillation du vent
+vent_speed = 0.006  # Vitesse de l'oscillation du vent
 temps = 0  # Compteur de temps pour l'oscillation
 
 # Activer les micro-variations pour ce scénario
@@ -113,10 +109,11 @@ class OscillantScenario(Scenario):
                     self.bateaux[-1].virement_manuel()
 
     def update(self):
-        # Mise à jour de l'angle du vent avec oscillation
-        self.temps += self.vent_speed
-        vent_angle_base = 90 + 10 * math.sin(self.temps)  # Oscillation entre 70° et 110°
-        self.vent_angle = calculer_angle_vent(vent_angle_base)
+        if not self.paused:  # Ne mettre à jour que si pas en pause
+            # Mise à jour de l'angle du vent avec oscillation
+            self.temps += self.vent_speed
+            vent_angle_base = 90 + 10 * math.sin(self.temps)  # Oscillation entre 70° et 110°
+            self.vent_angle = calculer_angle_vent(vent_angle_base)
         super().update()
 
 def main():
@@ -124,5 +121,4 @@ def main():
     scenario.run()
 
 if __name__ == "__main__":
-    main()
-    pygame.quit() 
+    main() 

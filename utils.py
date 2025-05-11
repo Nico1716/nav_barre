@@ -9,7 +9,7 @@ from state import control_all_boats, toggle_control_all_boats
 
 # Initialisation de Pygame (une seule fois)
 pygame.init()
-pygame.key.set_repeat(0)
+pygame.key.set_repeat(100, 50)  # Délai initial de 100ms, puis répétition toutes les 50ms
 
 # Dimensions de la fenêtre
 WIDTH, HEIGHT = 800, 600
@@ -27,6 +27,7 @@ DARK_GRAY = (100, 100, 100)
 # Police pour le texte
 FONT = pygame.font.SysFont(None, 32)
 SMALL_FONT = pygame.font.SysFont(None, 24)  # Police plus petite pour certains textes
+SYMBOL_FONT = pygame.font.SysFont("Segoe UI Symbol", 32)  # Police pour les symboles Unicode
 
 # Variable globale pour l'affichage des laylines
 show_laylines = True
@@ -56,9 +57,9 @@ class BateauPersonnalite:
         
         if self.type == "adonnante":
             # Vire quand le vent change de direction
-            if vent_angle > vent_angle_precedent and bateau.amure == 1:  # Vent augmente, on veut être bâbord
+            if vent_angle < vent_angle_precedent and bateau.amure == 1:  # Vent diminue, on veut être tribord
                 return True
-            elif vent_angle < vent_angle_precedent and bateau.amure == -1:  # Vent diminue, on veut être tribord
+            elif vent_angle > vent_angle_precedent and bateau.amure == -1:  # Vent augmente, on veut être bâbord
                 return True
 
         elif self.type == "rapprochant":
@@ -88,7 +89,7 @@ class Bateau:
         self.angle_bateau = 0
         self.frame_index = "Pr"
         self.speed_mult = 1
-        self.vitesse = 0.5
+        self.vitesse = 0.4
         self.manual_tack_pending = False
         self.tack_cooldown = 0
         self.is_player = is_player
@@ -212,7 +213,7 @@ class Bateau:
             self._gerer_virements(all_laylines, bouee_pos)
 
         # Virement selon la personnalité (si ce n'est pas le bateau joueur et qu'aucune layline n'a été dépassée)
-        if not self.is_player and hasattr(self, 'personnalite') and not self.layline_depassee:
+        if not self.is_player and hasattr(self, 'personnalite') and self.personnalite is not None and not self.layline_depassee:
             if self.personnalite.decide_virement(self, vent_angle, self.vent_angle_precedent):
                 self.amure = -self.amure
                 self.tack_cooldown = 60
@@ -270,6 +271,28 @@ class Bateau:
     def toggle_laylines(self):
         """Active/désactive l'affichage des laylines."""
         self.comportements['virement_laylines'] = not self.comportements['virement_laylines']
+
+    def ajuster_angle(self, delta):
+        """Ajuste l'angle au vent du bateau."""
+        if self.is_player:
+            # Inverser le delta en fonction de l'amure
+            delta_ajuste = delta if self.amure == 1 else -delta
+            nouveau_angle = self.angle_base + delta_ajuste
+            # Limiter l'angle entre 45 et 190 degrés
+            self.angle_base = max(45, min(190, nouveau_angle))
+            # Mettre à jour la frame et le multiplicateur de vitesse
+            if 45 <= self.angle_base <= 55:  # Près
+                self.frame_index = "Pr"
+                self.speed_mult = 1
+            elif 55 < self.angle_base < 155:  # Travers
+                self.frame_index = "Tr"
+                self.speed_mult = 1.5
+            elif 155 <= self.angle_base <= 180:  # Vent arrière
+                self.frame_index = "VA"
+                self.speed_mult = 1
+            elif self.angle_base > 180:  # Fausse panne
+                self.frame_index = "FP"
+                self.speed_mult = 1.2
 
 def coloriser_frame(frame, couleur):
     """Colorise une frame avec la couleur spécifiée."""
@@ -523,6 +546,45 @@ def get_controllable_boats(bateaux):
         return bateaux
     return [bateaux[-1]]  # Par défaut, seul le bateau joueur est contrôlable 
 
+def dessiner_lignes_egalite(screen, bouee, vent_angle, draw=True):
+    """
+    Dessine des lignes d'égalité perpendiculaires au vent, à intervalles réguliers.
+    Ces lignes sont des bandes blanches transparentes qui partent de la bouée jusqu'en bas de l'écran.
+    """
+    if not draw:
+        return
+
+    x, y = bouee
+    # Angle perpendiculaire au vent
+    angle_perp = -(vent_angle + 90) % 360
+    
+    # Créer une surface pour les lignes avec transparence
+    surface = pygame.Surface((WIDTH, HEIGHT), pygame.SRCALPHA)
+    
+    # Espacement entre les lignes
+    espacement = 50
+    
+    # Calculer le nombre de lignes nécessaires
+    nb_lignes = HEIGHT // espacement
+    
+    # Dessiner les lignes
+    for i in range(nb_lignes):
+        # Position de départ (sur la ligne du vent)
+        start_x = x + i * espacement * math.cos(math.radians(vent_angle))
+        start_y = y + i * espacement * math.sin(math.radians(vent_angle))
+        
+        # Points de la ligne perpendiculaire
+        x1 = start_x - WIDTH * math.cos(math.radians(angle_perp))
+        y1 = start_y - WIDTH * math.sin(math.radians(angle_perp))
+        x2 = start_x + WIDTH * math.cos(math.radians(angle_perp))
+        y2 = start_y + WIDTH * math.sin(math.radians(angle_perp))
+        
+        # Dessiner la ligne avec transparence
+        pygame.draw.line(surface, (255, 255, 255, 50), (x1, y1), (x2, y2), 2)
+    
+    # Appliquer la surface sur l'écran
+    screen.blit(surface, (0, 0))
+
 class Scenario:
     def __init__(self):
         self.running = True
@@ -532,7 +594,26 @@ class Scenario:
         self.laylines = []
         self.clock = pygame.time.Clock()
         self.show_laylines = False  # Laylines désactivées par défaut
+        self.show_lignes_egalite = False  # Lignes d'égalité désactivées par défaut
         self.laylines_button = pygame.Rect(WIDTH - 200, 10, 180, 30)
+        self.lignes_egalite_button = pygame.Rect(WIDTH - 200, 50, 180, 30)
+        self.pause_button = pygame.Rect(10, 50, 40, 40)  # Bouton pause en haut à gauche
+        self.paused = False  # État de pause
+        
+        # Créer les boutons de personnalité pour chaque bateau (sauf le joueur)
+        self.personnalite_buttons = []
+        button_radius = 15
+        spacing = 40
+        start_x = WIDTH - 200
+        start_y = 100
+        for i, bateau in enumerate(self.bateaux[:-1]):  # Exclure le dernier bateau (joueur)
+            button = {
+                'rect': pygame.Rect(start_x, start_y + i * spacing, button_radius * 2, button_radius * 2),
+                'color': bateau.couleur,
+                'active': True,
+                'bateau_index': i
+            }
+            self.personnalite_buttons.append(button)
 
     def get_controllable_boats(self):
         """Retourne la liste des bateaux contrôlables. Par défaut, seul le bateau joueur est contrôlable."""
@@ -546,18 +627,39 @@ class Scenario:
             elif event.type == pygame.KEYDOWN:
                 if event.key == pygame.K_ESCAPE:
                     retour_au_menu()
+                elif event.key == pygame.K_SPACE:
+                    # Virement de bord pour le bateau joueur
+                    self.bateaux[-1].virement_manuel()
+                elif event.key == pygame.K_LEFT:
+                    # Diminuer l'angle au vent
+                    self.bateaux[-1].ajuster_angle(-1)
+                elif event.key == pygame.K_RIGHT:
+                    # Augmenter l'angle au vent
+                    self.bateaux[-1].ajuster_angle(1)
             elif event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Clic gauche
                     if dessiner_bouton_menu(screen).collidepoint(event.pos):
                         retour_au_menu()
                     elif self.laylines_button.collidepoint(event.pos):
                         self.show_laylines = not self.show_laylines
+                    elif self.lignes_egalite_button.collidepoint(event.pos):
+                        self.show_lignes_egalite = not self.show_lignes_egalite
+                    elif self.pause_button.collidepoint(event.pos):
+                        self.paused = not self.paused
+                    else:
+                        # Vérifier les clics sur les boutons de personnalité
+                        for button in self.personnalite_buttons:
+                            if button['rect'].collidepoint(event.pos):
+                                button['active'] = not button['active']
+                                # Désactiver/activer la personnalité du bateau
+                                self.bateaux[button['bateau_index']].personnalite = None if not button['active'] else BateauPersonnalite("normal")
         return events
 
     def update(self):
-        self.laylines = dessiner_laylines(screen, self.bouee, self.vent_angle, draw=self.show_laylines)
-        for bateau in self.bateaux:
-            bateau.update(self.vent_angle, [self.laylines])
+        if not self.paused:  # Ne mettre à jour que si pas en pause
+            self.laylines = dessiner_laylines(screen, self.bouee, self.vent_angle, draw=self.show_laylines)
+            for bateau in self.bateaux:
+                bateau.update(self.vent_angle, [self.laylines])
 
     def draw(self):
         screen.fill(BLUE)
@@ -567,6 +669,9 @@ class Scenario:
             dessiner_laylines(screen, self.bouee, self.vent_angle, draw=True)
         else:
             dessiner_laylines(screen, self.bouee, self.vent_angle, draw=False)
+        
+        # Dessiner les lignes d'égalité
+        dessiner_lignes_egalite(screen, self.bouee, self.vent_angle, draw=self.show_lignes_egalite)
         
         # Dessiner les bateaux
         for bateau in self.bateaux:
@@ -579,7 +684,7 @@ class Scenario:
         dessiner_vent(screen, self.vent_angle)
         
         # Afficher l'angle du vent
-        angle_text = FONT.render(f"Vent: {int(self.vent_angle - 90)}°", True, WHITE)
+        angle_text = FONT.render(f"Vent: {-int(self.vent_angle - 90)}°", True, WHITE)
         screen.blit(angle_text, (10, HEIGHT - 80))
         
         # Dessiner le bouton menu
@@ -593,6 +698,38 @@ class Scenario:
             True, WHITE
         )
         screen.blit(laylines_text, (self.laylines_button.x + 10, self.laylines_button.y + 5))
+
+        # Dessiner le bouton des lignes d'égalité
+        pygame.draw.rect(screen, DARK_GRAY, self.lignes_egalite_button)
+        pygame.draw.rect(screen, WHITE, self.lignes_egalite_button, 2)
+        egalite_text = SMALL_FONT.render(
+            "Lignes égalité: " + ("ON" if self.show_lignes_egalite else "OFF"),
+            True, WHITE
+        )
+        screen.blit(egalite_text, (self.lignes_egalite_button.x + 10, self.lignes_egalite_button.y + 5))
+
+        # Dessiner les boutons de personnalité
+        for button in self.personnalite_buttons:
+            # Dessiner le cercle avec la couleur du bateau
+            pygame.draw.circle(screen, button['color'], button['rect'].center, button['rect'].width // 2)
+            # Dessiner un contour blanc
+            pygame.draw.circle(screen, WHITE, button['rect'].center, button['rect'].width // 2, 2)
+            # Si le bouton est inactif, dessiner une croix
+            if not button['active']:
+                center = button['rect'].center
+                pygame.draw.line(screen, WHITE, 
+                               (center[0] - 8, center[1] - 8),
+                               (center[0] + 8, center[1] + 8), 2)
+                pygame.draw.line(screen, WHITE,
+                               (center[0] + 8, center[1] - 8),
+                               (center[0] - 8, center[1] + 8), 2)
+
+        # Dessiner le bouton pause
+        pygame.draw.rect(screen, DARK_GRAY, self.pause_button)
+        pygame.draw.rect(screen, WHITE, self.pause_button, 2)
+        pause_text = FONT.render("II" if not self.paused else "▶", True, WHITE)
+        text_rect = pause_text.get_rect(center=self.pause_button.center)
+        screen.blit(pause_text, text_rect)
         
         pygame.display.flip()
 
