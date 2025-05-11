@@ -12,6 +12,7 @@ pygame.key.set_repeat(0)
 scenarios = [
     {"name": "Default", "file": "default.py"},
     {"name": "Oscillant", "file": "oscillant.py"},
+    {"name": "Évolutif", "file": "evolutif.py"},
     # {"name": "Autre scénario", "file": "autre.py"},
 ]
 selected = 0
