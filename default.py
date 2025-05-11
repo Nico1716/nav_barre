@@ -89,78 +89,95 @@ bouee = (WIDTH // 2, 100)
 # Variables pour le vent
 vent_angle = 90  # Angle initial du vent
 
-# Slider
-slider_rect = pygame.Rect(150, 550, 500, 10)
-slider_pos = 400
-slider_dragging = False
+class SliderScenario(Scenario):
+    def __init__(self):
+        super().__init__()
+        self.slider_rect = pygame.Rect(150, 550, 500, 10)
+        self.slider_pos = 400
+        self.slider_dragging = False
+        self.vent_angle = 90  # Angle initial du vent
 
-def main():
-    global vent_angle, slider_pos, slider_dragging
-    running = True
-    while running:
-        screen.fill(BLUE)
-        
-        # Gestion des événements
-        for event in pygame.event.get():
-            if event.type == pygame.QUIT:
-                running = False
-            elif event.type == pygame.KEYDOWN:
-                if event.key == pygame.K_ESCAPE:
-                    retour_au_menu()
-                elif event.key == pygame.K_SPACE:
-                    # Virement de bord manuel pour les bateaux contrôlables
-                    for bateau in get_controllable_boats(bateaux):
-                        bateau.virement_manuel()
-            elif event.type == pygame.MOUSEBUTTONDOWN:
+    def get_controllable_boats(self):
+        """Dans le scénario par défaut, tous les bateaux sont contrôlables."""
+        return self.bateaux
+
+    def handle_events(self):
+        events = super().handle_events()
+        for event in events:
+            if event.type == pygame.MOUSEBUTTONDOWN:
                 if event.button == 1:  # Clic gauche
-                    # Vérifier si on clique sur le slider
                     mouse_pos = pygame.mouse.get_pos()
-                    if slider_rect.collidepoint(mouse_pos):
-                        slider_dragging = True
-                    # Vérifier si on clique sur le bouton menu
-                    if dessiner_bouton_menu(screen).collidepoint(mouse_pos):
-                        retour_au_menu()
+                    if self.slider_rect.collidepoint(mouse_pos):
+                        self.slider_dragging = True
             elif event.type == pygame.MOUSEBUTTONUP:
                 if event.button == 1:  # Relâchement du clic gauche
-                    slider_dragging = False
+                    self.slider_dragging = False
             elif event.type == pygame.MOUSEMOTION:
-                if slider_dragging:
-                    # Mettre à jour la position du slider
+                if self.slider_dragging:
                     mouse_x = pygame.mouse.get_pos()[0]
-                    slider_pos = max(slider_rect.left, min(slider_rect.right, mouse_x))
-                    # Calculer l'angle du vent en fonction de la position du curseur
-                    slider_angle = -20 + (slider_pos - slider_rect.left) / slider_rect.width * 40
-                    vent_angle = slider_angle + 90
+                    self.slider_pos = max(self.slider_rect.left, min(self.slider_rect.right, mouse_x))
+                    slider_angle = -20 + (self.slider_pos - self.slider_rect.left) / self.slider_rect.width * 40
+                    self.vent_angle = slider_angle + 90
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_SPACE:
+                    # Virement de bord pour tous les bateaux contrôlables
+                    for bateau in self.get_controllable_boats():
+                        bateau.virement_manuel()
 
-        # Calculer les laylines
-        laylines = dessiner_laylines(screen, bouee, vent_angle)
-
-        # Mise à jour des bateaux
-        for bateau in bateaux:
-            bateau.update(vent_angle, [laylines])
+    def draw(self):
+        screen.fill(BLUE)
+        
+        # Dessiner les laylines
+        if self.show_laylines:
+            dessiner_laylines(screen, self.bouee, self.vent_angle, draw=True)
+        else:
+            dessiner_laylines(screen, self.bouee, self.vent_angle, draw=False)
+        
+        # Dessiner les bateaux
+        for bateau in self.bateaux:
             bateau.dessiner(screen)
-
+        
         # Dessiner la bouée
-        pygame.draw.circle(screen, YELLOW, bouee, 10)
-
+        pygame.draw.circle(screen, YELLOW, self.bouee, 10)
+        
         # Dessiner le vent
-        dessiner_vent(screen, vent_angle)
-
-        # Dessiner le slider
-        pygame.draw.rect(screen, GRAY, slider_rect)
-        pygame.draw.circle(screen, WHITE, (slider_pos, slider_rect.centery), 10)
+        dessiner_vent(screen, self.vent_angle)
         
         # Afficher l'angle du vent
-        angle_text = FONT.render(f"Vent: {int(vent_angle - 90)}°", True, WHITE)
+        angle_text = FONT.render(f"Vent: {int(self.vent_angle - 90)}°", True, WHITE)
         screen.blit(angle_text, (10, HEIGHT - 80))
-
+        
         # Dessiner le bouton menu
         dessiner_bouton_menu(screen)
 
+        # Dessiner le bouton des laylines
+        pygame.draw.rect(screen, DARK_GRAY, self.laylines_button)
+        pygame.draw.rect(screen, WHITE, self.laylines_button, 2)
+        laylines_text = SMALL_FONT.render(
+            "Debug laylines: " + ("ON" if self.show_laylines else "OFF"),
+            True, WHITE
+        )
+        screen.blit(laylines_text, (self.laylines_button.x + 10, self.laylines_button.y + 5))
+
+        # Dessiner le slider
+        pygame.draw.rect(screen, GRAY, self.slider_rect)
+        pygame.draw.circle(screen, WHITE, (self.slider_pos, self.slider_rect.centery), 10)
+        
+        # Ajouter le texte pour le slider
+        slider_text = SMALL_FONT.render("Angle du vent", True, WHITE)
+        screen.blit(slider_text, (self.slider_rect.x, self.slider_rect.y - 25))
+        
+        # Afficher la valeur actuelle de l'angle
+        angle_value = int(self.vent_angle - 90)
+        angle_text = SMALL_FONT.render(f"{angle_value}°", True, WHITE)
+        screen.blit(angle_text, (self.slider_rect.right + 10, self.slider_rect.y - 5))
+        
         pygame.display.flip()
-        pygame.time.Clock().tick(60)
+
+def main():
+    scenario = SliderScenario()
+    scenario.run()
 
 if __name__ == "__main__":
     main()
-
-pygame.quit()
+    pygame.quit()

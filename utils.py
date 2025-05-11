@@ -5,6 +5,7 @@ import sys
 import importlib
 import subprocess
 import random
+from state import control_all_boats, toggle_control_all_boats
 
 # Initialisation de Pygame (une seule fois)
 pygame.init()
@@ -29,7 +30,6 @@ SMALL_FONT = pygame.font.SysFont(None, 24)  # Police plus petite pour certains t
 
 # Variable globale pour l'affichage des laylines
 show_laylines = True
-control_all_boats = False  # Par défaut, on ne contrôle qu'un seul bateau
 
 # Variables pour les micro-variations du vent
 micro_variation = 0
@@ -39,6 +39,43 @@ micro_variation_duration = 60  # Durée de la phase stable en frames
 micro_variation_transition = 20  # Durée de la transition en frames
 micro_variations_active = False  # Par défaut, les micro-variations sont désactivées
 micro_variation_phase = "stable"  # "stable", "transition_in", "transition_out"
+
+class BateauPersonnalite:
+    def __init__(self, type_perso):
+        self.type = type_perso
+        self.last_tack_time = pygame.time.get_ticks()
+        self.tack_cooldown = 0
+        # Délai initial plus long pour le bateau aléatoire
+        self.next_tack_delay = random.randint(2000, 5000) if type_perso == "aleatoire" else random.randint(500, 2000)
+
+    def decide_virement(self, bateau, vent_angle, vent_angle_precedent):
+        if bateau.tack_cooldown > 0:
+            return False
+
+        current_time = pygame.time.get_ticks()
+        
+        if self.type == "adonnante":
+            # Vire quand le vent change de direction
+            if vent_angle > vent_angle_precedent and bateau.amure == 1:  # Vent augmente, on veut être bâbord
+                return True
+            elif vent_angle < vent_angle_precedent and bateau.amure == -1:  # Vent diminue, on veut être tribord
+                return True
+
+        elif self.type == "rapprochant":
+            # Vire en fonction de l'angle du vent
+            if vent_angle < 90 and bateau.amure == 1:  # Vent < 90°, on veut être tribord
+                return True
+            elif vent_angle >= 90 and bateau.amure == -1:  # Vent >= 90°, on veut être bâbord
+                return True
+
+        elif self.type == "aleatoire":
+            # Vire aléatoirement après le délai défini
+            if current_time - self.last_tack_time > self.next_tack_delay:
+                self.last_tack_time = current_time
+                self.next_tack_delay = random.randint(2000, 5000)  # Délai beaucoup plus long entre les virements
+                return True
+
+        return False
 
 class Bateau:
     def __init__(self, position, couleur, sprites, is_player=False):
@@ -54,7 +91,9 @@ class Bateau:
         self.vitesse = 0.5
         self.manual_tack_pending = False
         self.tack_cooldown = 0
-        self.is_player = is_player  # Indique si c'est le bateau joueur
+        self.is_player = is_player
+        self.vent_angle_precedent = 90  # Pour suivre les changements de vent
+        self.layline_depassee = False  # Flag pour indiquer si une layline a été dépassée
         
         # Comportements activés par défaut
         self.comportements = {
@@ -63,6 +102,82 @@ class Bateau:
             'virement_bords': True,
             'changement_allure_bords': True
         }
+
+    def _gerer_virements(self, all_laylines, bouee_pos):
+        """Gère tous les types de virements du bateau."""
+        
+        # Virement manuel prioritaire
+        if self.comportements['virement_manuel'] and self.manual_tack_pending and self.tack_cooldown == 0:
+            self.amure = -self.amure
+            self.manual_tack_pending = False
+            self.tack_cooldown = 60
+            return
+
+        # Virement automatique sur les laylines
+        if self.comportements['virement_laylines'] and all_laylines:
+            laylines = all_laylines[0]
+            
+            # Ne pas virer automatiquement si c'est le bateau joueur
+            if self.is_player and not control_all_boats:
+                return
+
+            # Vérifier si le bateau est dans le cadre des laylines
+            lh = next((l for l in laylines if l['id'] == 'lh'), None)
+            rc = next((l for l in laylines if l['id'] == 'rc'), None)
+            
+            if lh and rc:  # Vérifier que les laylines existent
+                cadreDroite = side(self.position[0], self.position[1],
+                            rc['start'][0], rc['start'][1],
+                            rc['end'][0], rc['end'][1])
+                
+                cadreGauche = side(self.position[0], self.position[1],
+                            lh['start'][0], lh['start'][1],
+                            lh['end'][0], lh['end'][1])
+
+                if cadreDroite > 0 and cadreGauche < 0:
+                    self.layline_depassee = False
+            
+            # Virement avant layline gauche
+            if lh and self.amure != 1 and self.position[1] > bouee_pos[1]:
+                s = side(self.position[0], self.position[1], 
+                        lh['start'][0], lh['start'][1], 
+                        lh['end'][0], lh['end'][1])
+                if s > 0:
+                    if self.tack_cooldown == 0:
+                        self.amure = 1
+                        self.tack_cooldown = 60
+                    self.layline_depassee = True
+                    return
+
+            # Virement après layline droite
+            rh = next((l for l in laylines if l['id'] == 'rh'), None)
+            if rh and self.amure != -1:
+                s = side(self.position[0], self.position[1], 
+                        rh['start'][0], rh['start'][1], 
+                        rh['end'][0], rh['end'][1])
+                if s < 0:
+                    if self.tack_cooldown == 0:
+                        self.amure = -1
+                        self.tack_cooldown = 60
+                    self.layline_depassee = True
+                    return
+
+            # Vérifier si le bateau dépasse la layline basse
+            lc = next((l for l in laylines if l['id'] == 'lc'), None)
+            if lc and self.angle_base == 45:
+                s = side(self.position[0], self.position[1],
+                        lc['start'][0], lc['start'][1],
+                        lc['end'][0], lc['end'][1])
+                if s > 0:  # Si le bateau est au-delà de la layline basse
+                    self.angle_base = 55  # Changer l'angle de base à 55
+                    self.layline_depassee = True
+
+            if lh and self.angle_base == 55:
+                s = side(self.position[0], self.position[1],
+                        lh['start'][0], lh['start'][1],
+                        lh['end'][0], lh['end'][1])
+                if s < 0:
+                    self.angle_base = 45
 
     def update(self, vent_angle, all_laylines=None):
         """Met à jour la position et l'état du bateau."""
@@ -96,6 +211,15 @@ class Bateau:
             bouee_pos = all_laylines[0][0]['start']  # La position de la bouée est le point de départ de la première layline
             self._gerer_virements(all_laylines, bouee_pos)
 
+        # Virement selon la personnalité (si ce n'est pas le bateau joueur et qu'aucune layline n'a été dépassée)
+        if not self.is_player and hasattr(self, 'personnalite') and not self.layline_depassee:
+            if self.personnalite.decide_virement(self, vent_angle, self.vent_angle_precedent):
+                self.amure = -self.amure
+                self.tack_cooldown = 60
+
+        # Mise à jour de l'angle du vent précédent
+        self.vent_angle_precedent = vent_angle
+
         # Calcul de la vitesse en x et y avec multiplicateur
         dx = self.vitesse * self.speed_mult * math.cos(math.radians(self.angle_bateau))
         dy = -self.vitesse * self.speed_mult * math.sin(math.radians(self.angle_bateau))
@@ -123,61 +247,6 @@ class Bateau:
         # Limiter la position
         self.position[0] = max(0, min(WIDTH, self.position[0]))
         self.position[1] = max(0, min(HEIGHT, self.position[1]))
-
-    def _gerer_virements(self, all_laylines, bouee_pos):
-        """Gère tous les types de virements du bateau."""
-        # Virement manuel prioritaire
-        if self.comportements['virement_manuel'] and self.manual_tack_pending and self.tack_cooldown == 0:
-            self.amure = -self.amure
-            self.manual_tack_pending = False
-            self.tack_cooldown = 60
-            return
-
-        # Virement automatique sur les laylines
-        if self.comportements['virement_laylines'] and self.tack_cooldown == 0 and all_laylines:
-            laylines = all_laylines[0]
-            
-            # Ne pas virer automatiquement si c'est le bateau joueur
-            if self.is_player and not control_all_boats:
-                return
-            
-            # Virement sur layline haute
-            lh = next((l for l in laylines if l['id'] == 'lh'), None)
-            if lh and self.amure != 1 and self.position[1] > bouee_pos[1]:
-                s = side(self.position[0], self.position[1], 
-                        lh['start'][0], lh['start'][1], 
-                        lh['end'][0], lh['end'][1])
-                if s > 0:
-                    self.amure = 1
-                    self.tack_cooldown = 60
-                    return
-
-            # Virement sur layline basse
-            rh = next((l for l in laylines if l['id'] == 'rh'), None)
-            if rh and self.amure != -1 and self.position[1] > bouee_pos[1]:
-                s = side(self.position[0], self.position[1], 
-                        rh['start'][0], rh['start'][1], 
-                        rh['end'][0], rh['end'][1])
-                if s < 0:
-                    self.amure = -1
-                    self.tack_cooldown = 60
-                    return
-
-            # Vérifier si le bateau dépasse la layline basse
-            lc = next((l for l in laylines if l['id'] == 'lc'), None)
-            if lc and self.angle_base == 45:
-                s = side(self.position[0], self.position[1],
-                        lc['start'][0], lc['start'][1],
-                        lc['end'][0], lc['end'][1])
-                if s > 0:  # Si le bateau est au-delà de la layline basse
-                    self.angle_base = 55  # Changer l'angle de base à 55
-
-            if lh and self.angle_base == 55:
-                s = side(self.position[0], self.position[1],
-                        lh['start'][0], lh['start'][1],
-                        lh['end'][0], lh['end'][1])
-                if s < 0:
-                    self.angle_base = 45
 
     def dessiner(self, screen):
         """Dessine le bateau et sa trajectoire."""
@@ -211,7 +280,7 @@ def coloriser_frame(frame, couleur):
 def dessiner_laylines(screen, bouee, vent_angle, distance=150, offset=20, draw=True):
     """
     Dessine toutes les lay-lines (centrale, haute, basse) de chaque côté de la bouée en fonction de l'angle du vent.
-    Centrale = blanc, haute = magenta, basse = jaune.
+    Centrale = blanc (toujours affichée), haute = magenta, basse = jaune.
     Retourne les coordonnées de toutes les lay-lines.
     """
     x, y = bouee
@@ -219,11 +288,10 @@ def dessiner_laylines(screen, bouee, vent_angle, distance=150, offset=20, draw=T
     for angle, side in zip([45, -45], ['r', 'l']):
         angle_central = (vent_angle + 180 + angle) % 360
         long_dist = max(WIDTH, HEIGHT) * 2
-        # Centrale
+        # Centrale (toujours affichée)
         x_central = x + long_dist * math.cos(math.radians(angle_central))
         y_central = y - long_dist * math.sin(math.radians(angle_central))
-        if draw:
-            pygame.draw.line(screen, WHITE, (x, y), (x_central, y_central), 2)
+        pygame.draw.line(screen, WHITE, (x, y), (x_central, y_central), 2)
         laylines.append({
             'type': 'central',
             'start': (x, y),
@@ -231,7 +299,7 @@ def dessiner_laylines(screen, bouee, vent_angle, distance=150, offset=20, draw=T
             'angle': angle_central,
             'id': f'{side}c'
         })
-        # Haute et basse
+        # Haute et basse (affichées seulement si draw=True)
         for direction, name, suffix in [(-1, 'haute', 'h'), (1, 'basse', 'b')]:
             x_offset = x + direction * offset * math.sin(math.radians(angle_central))
             y_offset = y + direction * offset * math.cos(math.radians(angle_central))
@@ -297,22 +365,30 @@ def creer_bateaux():
     """Crée et retourne une liste de bateaux avec leurs positions initiales."""
     sprites = charger_sprites()
     bateaux = []
+    
+    # Définir les positions initiales possibles
     positions_initiales = [
         [100, HEIGHT - 100],
         [300, HEIGHT - 100],
         [500, HEIGHT - 100],
         [700, HEIGHT - 100]
     ]
-    couleurs = [
-        (255, 0, 0),   # Rouge
-        (0, 255, 0),   # Vert
-        (0, 0, 255),   # Bleu
-        (255, 255, 0)  # Jaune
+    
+    # Mélanger les positions
+    random.shuffle(positions_initiales)
+    
+    # Définir les personnalités et leurs couleurs
+    personnalites = [
+        ("adonnante", (255, 0, 0)),      # Rouge
+        ("rapprochant", (0, 255, 0)),    # Vert
+        ("aleatoire", (0, 0, 255)),      # Bleu
+        ("normal", (255, 255, 0))        # Jaune
     ]
-
-    # Créer les bateaux normaux
-    for pos, couleur, sprite in zip(positions_initiales, couleurs, sprites[:-1]):
+    
+    # Créer les bateaux normaux avec leurs personnalités
+    for i, (pos, (type_perso, couleur), sprite) in enumerate(zip(positions_initiales, personnalites, sprites[:-1])):
         bateau = Bateau(pos, couleur, sprite, is_player=False)
+        bateau.personnalite = BateauPersonnalite(type_perso)
         bateaux.append(bateau)
     
     # Créer le bateau joueur avec les sprites originaux
@@ -338,6 +414,10 @@ def dessiner_vent(screen, vent_angle):
 
 def changer_scene(nom_fichier):
     """Change de scène en rechargeant le module correspondant."""
+    # Sauvegarder l'état de control_all_boats
+    global control_all_boats
+    saved_control_state = control_all_boats
+    
     # Nettoyer l'écran
     screen.fill(BLUE)
     pygame.display.flip()
@@ -347,6 +427,9 @@ def changer_scene(nom_fichier):
         nom_fichier = nom_fichier[:-3]
     module = importlib.import_module(nom_fichier)
     importlib.reload(module)
+    
+    # Restaurer l'état de control_all_boats
+    control_all_boats = saved_control_state
     
     # Lancer la nouvelle scène
     module.main()
@@ -432,9 +515,90 @@ def toggle_control_all_boats():
     """Active/désactive le contrôle de tous les bateaux."""
     global control_all_boats
     control_all_boats = not control_all_boats
+    print(f"Toggling control_all_boats to: {control_all_boats}")  # Debug print
 
 def get_controllable_boats(bateaux):
     """Retourne la liste des bateaux contrôlables."""
     if control_all_boats:
         return bateaux
     return [bateaux[-1]]  # Par défaut, seul le bateau joueur est contrôlable 
+
+class Scenario:
+    def __init__(self):
+        self.running = True
+        self.vent_angle = 90
+        self.bouee = (WIDTH // 2, 100)
+        self.bateaux = creer_bateaux()
+        self.laylines = []
+        self.clock = pygame.time.Clock()
+        self.show_laylines = False  # Laylines désactivées par défaut
+        self.laylines_button = pygame.Rect(WIDTH - 200, 10, 180, 30)
+
+    def get_controllable_boats(self):
+        """Retourne la liste des bateaux contrôlables. Par défaut, seul le bateau joueur est contrôlable."""
+        return [self.bateaux[-1]]  # Par défaut, seul le dernier bateau (joueur) est contrôlable
+
+    def handle_events(self):
+        events = pygame.event.get()
+        for event in events:
+            if event.type == pygame.QUIT:
+                self.running = False
+            elif event.type == pygame.KEYDOWN:
+                if event.key == pygame.K_ESCAPE:
+                    retour_au_menu()
+            elif event.type == pygame.MOUSEBUTTONDOWN:
+                if event.button == 1:  # Clic gauche
+                    if dessiner_bouton_menu(screen).collidepoint(event.pos):
+                        retour_au_menu()
+                    elif self.laylines_button.collidepoint(event.pos):
+                        self.show_laylines = not self.show_laylines
+        return events
+
+    def update(self):
+        self.laylines = dessiner_laylines(screen, self.bouee, self.vent_angle, draw=self.show_laylines)
+        for bateau in self.bateaux:
+            bateau.update(self.vent_angle, [self.laylines])
+
+    def draw(self):
+        screen.fill(BLUE)
+        
+        # Dessiner les laylines
+        if self.show_laylines:
+            dessiner_laylines(screen, self.bouee, self.vent_angle, draw=True)
+        else:
+            dessiner_laylines(screen, self.bouee, self.vent_angle, draw=False)
+        
+        # Dessiner les bateaux
+        for bateau in self.bateaux:
+            bateau.dessiner(screen)
+        
+        # Dessiner la bouée
+        pygame.draw.circle(screen, YELLOW, self.bouee, 10)
+        
+        # Dessiner le vent
+        dessiner_vent(screen, self.vent_angle)
+        
+        # Afficher l'angle du vent
+        angle_text = FONT.render(f"Vent: {int(self.vent_angle - 90)}°", True, WHITE)
+        screen.blit(angle_text, (10, HEIGHT - 80))
+        
+        # Dessiner le bouton menu
+        dessiner_bouton_menu(screen)
+
+        # Dessiner le bouton des laylines
+        pygame.draw.rect(screen, DARK_GRAY, self.laylines_button)
+        pygame.draw.rect(screen, WHITE, self.laylines_button, 2)
+        laylines_text = SMALL_FONT.render(
+            "Debug laylines: " + ("ON" if self.show_laylines else "OFF"),
+            True, WHITE
+        )
+        screen.blit(laylines_text, (self.laylines_button.x + 10, self.laylines_button.y + 5))
+        
+        pygame.display.flip()
+
+    def run(self):
+        while self.running:
+            self.handle_events()
+            self.update()
+            self.draw()
+            self.clock.tick(60) 

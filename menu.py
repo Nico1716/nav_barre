@@ -2,8 +2,7 @@ import pygame
 import sys
 import subprocess
 from utils import (
-    WIDTH, HEIGHT, screen, FONT, SMALL_FONT, 
-    control_all_boats, toggle_control_all_boats
+    WIDTH, HEIGHT, screen, FONT, SMALL_FONT
 )
 
 pygame.init()
@@ -11,7 +10,7 @@ pygame.key.set_repeat(0)
 
 # List of scenarios (add more as needed)
 scenarios = [
-    {"name": "Default", "file": "new_test.py"},
+    {"name": "Default", "file": "default.py"},
     {"name": "Oscillant", "file": "oscillant.py"},
     # {"name": "Autre scénario", "file": "autre.py"},
 ]
@@ -20,18 +19,6 @@ selected = 0
 BG_COLOR = (30, 30, 60)
 WHITE = (255, 255, 255)
 YELLOW = (255, 255, 0)
-
-# Position de la case à cocher
-checkbox_rect = pygame.Rect(WIDTH//2 - 100, HEIGHT//2 + 100, 20, 20)
-
-def dessiner_checkbox(rect, texte, checked):
-    """Dessine une case à cocher avec son texte."""
-    pygame.draw.rect(screen, WHITE, rect, 2)
-    if checked:
-        pygame.draw.line(screen, WHITE, (rect.x + 5, rect.y + 10), (rect.x + 8, rect.y + 15), 2)
-        pygame.draw.line(screen, WHITE, (rect.x + 8, rect.y + 15), (rect.x + 15, rect.y + 5), 2)
-    texte_surface = SMALL_FONT.render(texte, True, WHITE)
-    screen.blit(texte_surface, (rect.x + 30, rect.y))
 
 running = True
 while running:
@@ -43,9 +30,6 @@ while running:
         color = YELLOW if i == selected else WHITE
         label = SMALL_FONT.render(scenario["name"], True, color)
         screen.blit(label, (WIDTH // 2 - label.get_width() // 2, 200 + i * 50))
-
-    # Dessiner la case à cocher
-    dessiner_checkbox(checkbox_rect, "Contrôler tous les bateaux", control_all_boats)
 
     pygame.display.flip()
 
@@ -63,11 +47,5 @@ while running:
                 pygame.quit()
                 subprocess.run([sys.executable, scenario_file])
                 sys.exit()
-        elif event.type == pygame.MOUSEBUTTONDOWN:
-            if event.button == 1:  # Clic gauche
-                mouse_pos = pygame.mouse.get_pos()
-                if checkbox_rect.collidepoint(mouse_pos):
-                    toggle_control_all_boats()
-                    print(f"Control all boats: {control_all_boats}")  # Debug print
 
 pygame.quit() 
