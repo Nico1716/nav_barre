@@ -5,9 +5,22 @@ Un simulateur de régate de voile en Python utilisant Pygame, permettant de simu
 ## Fonctionnalités
 
 ### Scénarios
-- **Scénario par défaut** : Contrôle de tous les bateaux avec la barre d'espace
-- **Scénario oscillant** : Vent oscillant avec micro-variations, contrôle uniquement du bateau joueur
-- **Scénario évolutif** : Vent qui tourne lentement dans un sens avec micro-variations, contrôle uniquement du bateau joueur
+- **Scénario par défaut** : 
+  - Contrôle manuel de l'angle du vent via un slider
+  - Contrôle de tous les bateaux avec la barre d'espace
+  - Idéal pour tester différentes conditions de vent
+
+- **Scénario oscillant** : 
+  - Vent qui oscille automatiquement entre 70° et 110°
+  - Micro-variations aléatoires
+  - Contrôle uniquement du bateau joueur
+  - Parfait pour tester la réactivité aux changements de vent
+
+- **Scénario évolutif** : 
+  - Vent qui tourne lentement dans un sens
+  - Micro-variations aléatoires
+  - Contrôle uniquement du bateau joueur
+  - Idéal pour tester les stratégies sur le long terme
 
 ### Bateaux
 - 5 bateaux avec des personnalités distinctes :
@@ -26,6 +39,7 @@ Un simulateur de régate de voile en Python utilisant Pygame, permettant de simu
 ### Caractéristiques
 - Simulation réaliste des virements de bord
 - Visualisation des laylines
+- Micro-variations du vent pour plus de réalisme
 - Différents cas de conditions ET de stratégies
 - Trajectoires des bateaux
 - Interface utilisateur intuitive
